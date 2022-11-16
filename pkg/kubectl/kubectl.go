@@ -2,6 +2,7 @@ package kubectl
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,11 +21,12 @@ import (
 // KubectlURLTemplate defines the pattern of download URLs for kubectl
 // Edit this value to use a custom location
 var (
-	KubectlURLTemplate         = "https://storage.googleapis.com/kubernetes-release/release/v{{ .Version }}/bin/{{ .OS }}/{{ .Arch }}/kubectl"
+	KubectlURLTemplate         = "https://dl.k8s.io/release/v{{ .Version }}/bin/{{ .OS }}/{{ .Arch }}/kubectl"
 	HomeDir                    = homedir.HomeDir
 	versionRegexp              = regexp.MustCompile("([0-9.]+)")
 	originalHomeDir            = HomeDir
 	originalKubectlURLTemplate = KubectlURLTemplate
+	ErrNoBinaryFound           = errors.New("No binary for the specified version was found")
 )
 
 // Reset resets the package variables that could have been modified from outside
@@ -53,14 +55,14 @@ func normalizeVersion(version string) string {
 }
 
 // URL returns the URL where a given kubectl version should be downloaded from
-func URL(version string) string {
+func URL(version string, os string, arch string) string {
 	version = normalizeVersion(version)
 	t := template.Must(template.New("URL").Parse(KubectlURLTemplate))
 	b := bytes.NewBuffer(nil)
 	t.Execute(b, &kubectlVersion{
 		Version: version,
-		OS:      runtime.GOOS,
-		Arch:    runtime.GOARCH,
+		OS:      os,
+		Arch:    arch,
 	})
 	return b.String()
 }
@@ -76,10 +78,10 @@ func Path(version string) string {
 }
 
 // Download downloads a specific kubectl version to Path()
-func Download(version string) error {
+func Download(version string, osName string, arch string) error {
 	version = normalizeVersion(version)
 
-	kubectlURL := URL(version)
+	kubectlURL := URL(version, osName, arch)
 	kubectl := Path(version)
 
 	if err := os.MkdirAll(binDir(), 0766); err != nil {
@@ -92,8 +94,12 @@ func Download(version string) error {
 		return fmt.Errorf("failed to download the kubectl version: %s", err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return ErrNoBinaryFound
+	}
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download kubectl from %s: %s", kubectlURL, err)
+		fmt.Printf("resp %+v\n", response)
+		return fmt.Errorf("failed to download kubectl from %s: %v", kubectlURL, err)
 	}
 	fd, err := os.Create(kubectl)
 	if err != nil {

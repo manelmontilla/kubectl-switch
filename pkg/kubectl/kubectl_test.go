@@ -19,8 +19,8 @@ func (r roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, erro
 	return r(request)
 }
 
-func testURL(t testing.TB, version, expectedURL string) {
-	assert.Equal(t, expectedURL, kubectl.URL(version))
+func testURL(t testing.TB, version, expectedURL string, os string, arch string) {
+	assert.Equal(t, expectedURL, kubectl.URL(version, os, arch))
 }
 
 func mockKubectl(t testing.TB, code int) func() {
@@ -39,9 +39,11 @@ func mockKubectl(t testing.TB, code int) func() {
 }
 
 func TestURL(t *testing.T) {
-	testURL(t, "v1.0.0", fmt.Sprintf("https://storage.googleapis.com/kubernetes-release/release/v1.0.0/bin/%s/%s/kubectl", runtime.GOOS, runtime.GOARCH))
-	testURL(t, "1.0.0", fmt.Sprintf("https://storage.googleapis.com/kubernetes-release/release/v1.0.0/bin/%s/%s/kubectl", runtime.GOOS, runtime.GOARCH))
-	testURL(t, "v1.0.0+coreos", fmt.Sprintf("https://storage.googleapis.com/kubernetes-release/release/v1.0.0/bin/%s/%s/kubectl", runtime.GOOS, runtime.GOARCH))
+	os := runtime.GOOS
+	arch := runtime.GOARCH
+	testURL(t, "v1.0.0", fmt.Sprintf("https://storage.googleapis.com/kubernetes-release/release/v1.0.0/bin/%s/%s/kubectl", os, arch), os, arch)
+	testURL(t, "1.0.0", fmt.Sprintf("https://storage.googleapis.com/kubernetes-release/release/v1.0.0/bin/%s/%s/kubectl", os, arch), os, arch)
+	testURL(t, "v1.0.0+coreos", fmt.Sprintf("https://storage.googleapis.com/kubernetes-release/release/v1.0.0/bin/%s/%s/kubectl", os, arch), os, arch)
 }
 
 func TestPath(t *testing.T) {
@@ -68,25 +70,28 @@ func TestDownload(t *testing.T) {
 		defer func() {
 			http.DefaultTransport = defaultTransport
 		}()
-		assert.Error(t, kubectl.Download("v0.0.9.9"))
+		os := runtime.GOOS
+		arch := runtime.GOARCH
+		assert.Error(t, kubectl.Download("v0.0.9.9", os, arch))
 		assert.False(t, kubectl.Installed("v0.0.9.9"))
 	})
 }
 
 func TestDownloadAndRun(t *testing.T) {
+	os := runtime.GOOS
+	arch := runtime.GOARCH
 	t.Cleanup(kubectl.Reset)
 	kubectl.HomeDir = func() string { return "./test-home" }
 	assert.False(t, kubectl.Installed("test-some-version"))
 	t.Run("When kubectl returns an error, Run returns the status code", func(t *testing.T) {
 		defer mockKubectl(t, 1)()
-		assert.NoError(t, kubectl.Download("0.0.0.1"))
-		assert.FileExists(t, kubectl.Path("0.0.0.1"))
+		assert.NoError(t, kubectl.Download("0.0.0.1", os, arch))
 		assert.Equal(t, 1, kubectl.Exec("0.0.0.1"))
 		assert.True(t, kubectl.Installed("0.0.0.1"))
 	})
 	t.Run("When kubectl returns an error, Run returns the status code", func(t *testing.T) {
 		defer mockKubectl(t, 0)()
-		assert.NoError(t, kubectl.Download("0.0.0.2"))
+		assert.NoError(t, kubectl.Download("0.0.0.2", os, arch))
 		assert.FileExists(t, kubectl.Path("0.0.0.2"))
 		assert.Equal(t, 0, kubectl.Exec("0.0.0.2"))
 	})

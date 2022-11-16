@@ -1,8 +1,10 @@
 package kswitch
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/tjamet/kubectl-switch/pkg/kubectl"
 	"github.com/tjamet/kubectl-switch/pkg/server"
@@ -16,14 +18,31 @@ var exit = os.Exit
 
 func run(rg server.RestConfigGetter) {
 	v := server.GetVersionFromConfig(rg)
+	os := runtime.GOOS
+	arch := runtime.GOARCH
+	code, err := run_with_version(v, os, arch)
+	// If we are in a Mac OS with an arm64 just download the amd64 and use
+	// Rosseta.
+	if errors.Is(err, kubectl.ErrNoBinaryFound) && os == "darwin" && arch == "arm64" {
+		code, err = run_with_version(v, os, "amd64")
+	}
+	if err != nil {
+		fmt.Printf("Failed to download kubectl version %s: %v\n", v, err.Error())
+		exit(1)
+	}
+	exit(code)
+}
+
+func run_with_version(v string, osName string, arch string) (int, error) {
 	if !kubectl.Installed(v) {
-		err := kubectl.Download(v)
+		err := kubectl.Download(v, osName, arch)
 		if err != nil {
-			fmt.Printf("Failed to download kubectl version %s: %v\n", v, err.Error())
-			exit(1)
+			return 0, fmt.Errorf("failed to download kubectl version %s: %w", v, err)
+
 		}
 	}
-	exit(kubectl.Exec(v, os.Args[1:]...))
+	r := kubectl.Exec(v, os.Args[1:]...)
+	return r, nil
 }
 
 type nopWriter struct{}
